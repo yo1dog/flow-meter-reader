@@ -10,7 +10,8 @@ public class FlowMeterReader
 	// ===================================================================
 	
 	// number of nanoseconds in a second
-	private static final long NS_IN_S = 1000000000l;
+	public static final long NS_IN_S  = 1000000000l;
+	public static final long NS_IN_MS = 1000000l;
 	
 	// max time in nanoseconds a pulse can exist for
 	// meaning, this is the max time the amplitude can rise/fall for it to be considered caused by a pulse

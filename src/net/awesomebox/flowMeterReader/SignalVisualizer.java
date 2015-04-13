@@ -12,7 +12,7 @@ import java.util.ArrayList;
 
 import javax.swing.JFrame;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
+import javax.swing.JScrollBar;
 
 
 public class SignalVisualizer
@@ -26,6 +26,19 @@ public class SignalVisualizer
 	private static final int STARTING_VISUALIZER_WIDTH  = 1200;
 	private static final int STARTING_VISUALIZER_HEIGHT = 500;
 	
+	private static final int VISUALIZATION_TOP_PADDING    = 120;
+	private static final int VISUALIZATION_BOTTOM_PADDING = 40;
+	private static final int VISUALIZATION_MIN_HEIGHT     = 100;
+	
+	static final double MIN_VISUALIZATION_X_SCALE = 1.0d/20000000; // pixels per nanosecond. 1 pixel = 20000000 nanoseconds
+	static final double MAX_VISUALIZATION_X_SCALE = 1.0d/50;       // pixels per nanosecond. 1 pixel = 50 nanoseconds
+	
+	// The scroll bar uses ints and our times are in nanoseconds.
+	// This means we will only be able to span 2 seconds. Scaling
+	// the values down before converting to ints will allow use to
+	// operate longer before overflowing
+	private static final double SCROLL_BAR_SCALE = 0.0005d;
+	
 	public static final double ZOOM_RATE = 1.5d;
 	public static final int PAN_SPEED = 100;
 	
@@ -33,8 +46,7 @@ public class SignalVisualizer
 	public static final Color FM1_LIGHT_COLOR = new Color(255, 128, 128);
 	public static final Color FM2_COLOR       = new Color(0,   0,   255);
 	public static final Color FM2_LIGHT_COLOR = new Color(128, 128, 255);
-	
-	
+		
 	
 	// ===================================================================
 	// Variables
@@ -43,40 +55,10 @@ public class SignalVisualizer
 	
 	// if the streamer should pause
 	boolean pauseStreamer = false;
-	public boolean shouldPause() { return pauseStreamer;}
+	public boolean shouldPause() { return pauseStreamer; }
 	
-	boolean showFM1PulseBoxes = false;
-	boolean showFM2PulseBoxes = false;
-	boolean showPulseAmplitudeDeltas = false;
-	boolean showGridLines = false;
-	
-	
-	// -------------------------------------------------------------------
-	// visualization params
-	
-	// pixel width of the visualizer
-	private int visualizerWidth;
-	
-	// pixel position of the Y origin (y=0) in the visualization
-	private int visualizationYOrigin;
-	
-	// the number of pixels above and below the Y origin in the visualization
-	private int visualizationYRange;
-	
-	// visualization drawing scales
-	double visualizationXScale = 1.0d/200000; // pixels per nanosecond. 1 pixel = 200000 nanoseconds
-	private double visualizationYScale;
-	
-	// span of time that can be seen by the visualizer
-	private long visualizationTimeSpanNS;
-	
-	// how many pixels wide all the stored samples are when displayed in the visualization
-	int dataDisplayedWidth;
-	
-	
-	// the X position of the visualization in regards to the data
-	// meaning, data at this time appears at the far left side of the visualizer
-	private long visualizationTimePositionNS = 0;
+	// the sample rate of all samples given
+	private final int sampleRate;
 	
 	// if only the latest samples should be shown (true) or if all samples
 	// should be shown in a scroll view (false).
@@ -86,10 +68,42 @@ public class SignalVisualizer
 	// -------------------------------------------------------------------
 	// window elements
 	
-	SingalVisualizerPanel panel;
-	JScrollPane scroller;
+	SingalVisualizerPanel visualizerPanel;
+	JScrollBar scrollBar;
 	
-	int scrollPosX = 0;
+	
+	// -------------------------------------------------------------------
+	// visualization drawing params
+	
+	// pixel position of the Y origin (y=0) in the visualization
+	private int visualizationYOrigin;
+	
+	// the number of pixels above and below the Y origin in the visualization
+	private int visualizationYRange;
+	
+	// visualization drawing scales
+	double visualizationXScale = 1.0d/200000; // pixels per nanosecond. 1 pixel = 200000 nanoseconds
+	double visualizationYScale;
+	
+	// what decorations we should show
+	boolean showFM1PulseBoxes        = false;
+	boolean showFM2PulseBoxes        = false;
+	boolean showPulseAmplitudeDeltas = false;
+	boolean showGridLines            = false;
+	
+	
+	// -------------------------------------------------------------------
+	// visualization window variables
+	
+	// span of time that can be seen by the visualizer window
+	private long visualizationWindowTimeSpanNS;
+	
+	// the X position of the visualization window in regards to the data
+	// meaning, data at this time appears at the far left side of the visualizer
+	long visualizationWindowTimePositionNS = 0;
+	
+	private int visualizationWindowFirstVisibleSampleIndex;
+	private int visualizationWindowLastVisibleSampleIndex;
 	
 	
 	// -------------------------------------------------------------------
@@ -125,7 +139,7 @@ public class SignalVisualizer
 		@Override
 		public void paint(Graphics g)
 		{
-			drawVisualization(this, g);
+			drawVisualization(g, this.getWidth(), this.getHeight());
 		}
 	}
 	
@@ -139,11 +153,14 @@ public class SignalVisualizer
 	/**
 	 * Creates a window for visualizing audio samples and pulses.
 	 * 
+	 * @param sampleRate     - Sample rate. It is assumed that all samples given are <code>1/sampleRate</code>
+	 *                         seconds apart.
 	 * @param onlyShowLatest - if only the latest samples should be shown (<code>true</code>) or
 	 *                         if all samples should be shown in a scroll view (<code>false</code>).
 	 */
-	public SignalVisualizer(boolean onlyShowLatest)
+	public SignalVisualizer(int sampleRate, boolean onlyShowLatest)
 	{
+		this.sampleRate = sampleRate;
 		this.onlyShowLatest = onlyShowLatest;
 		
 		// I know very little about Java windows, so the bellow code is probably terrible...
@@ -160,8 +177,8 @@ public class SignalVisualizer
 			@Override
 			public void componentResized(ComponentEvent e)
 			{
-				// resize the visualizer to match the frame
-				resizeVisualizer(frame);
+				// resize the visualizer
+				resizeVisualizer();
 			}
 			
 			@Override public void componentHidden(ComponentEvent e) {}
@@ -171,40 +188,50 @@ public class SignalVisualizer
 		
 		
 		// create the panel
-		panel = new SingalVisualizerPanel();
+		visualizerPanel = new SingalVisualizerPanel();
 		
 		// add key bindings
 		SignalVisualizerKeyBindings.attachKeyBindings(this);
 		
 		// set the preferred size to the max possible visualization size
-		panel.setPreferredSize(new Dimension(
+		visualizerPanel.setPreferredSize(new Dimension(
 			STARTING_VISUALIZER_WIDTH,
 			STARTING_VISUALIZER_HEIGHT
 		));
-		frame.add(panel, java.awt.BorderLayout.CENTER);
+		frame.add(visualizerPanel, java.awt.BorderLayout.CENTER);
 		
-		// create the scroll pane
+		
+		// create scroll bar
 		if (!onlyShowLatest)
 		{
-			scroller = new JScrollPane(panel);
-			scroller.getHorizontalScrollBar().addAdjustmentListener(new AdjustmentListener()
+			scrollBar = new JScrollBar(JScrollBar.HORIZONTAL);
+			
+			// allow extent to be set before max is
+			scrollBar.getModel().setMaximum(Integer.MAX_VALUE);
+			
+			// attach scroll listener
+			scrollBar.addAdjustmentListener(new AdjustmentListener()
 			{
-				// on scroll, record the x position
 				@Override
 				public void adjustmentValueChanged(AdjustmentEvent e)
 				{
-					scrollPosX = e.getValue();
+					// set visualization window position
+					visualizationWindowTimePositionNS = (long)(scrollBar.getModel().getValue() / SCROLL_BAR_SCALE);
+					recalculateVisualizationWindowVisibleSamples();
+					
+					visualizerPanel.repaint();
 				}
 			});
-			frame.add(scroller, java.awt.BorderLayout.CENTER);
+			
+			frame.add(scrollBar, java.awt.BorderLayout.SOUTH);
 		}
 		
 		// finalize and display
 		frame.pack();
 		frame.setVisible(true);
 		
-		// resize the visualizer to match the frame
-		resizeVisualizer(frame);
+		// resize the visualizer
+		resizeVisualizer();
 	}
 	
 	
@@ -213,29 +240,159 @@ public class SignalVisualizer
 	 * 
 	 * @param frame - Frame to fit to.
 	 */
-	synchronized void resizeVisualizer(JFrame frame)
+	synchronized void resizeVisualizer()
 	{
-		// make the visualizer the same width as the frame
-		visualizerWidth = frame.getWidth();
+		int visualizationHeight = Math.max(
+			VISUALIZATION_MIN_HEIGHT, 
+			visualizerPanel.getHeight() - (VISUALIZATION_TOP_PADDING + VISUALIZATION_BOTTOM_PADDING) // fill the panel
+		);
 		
-		// make y=0 the center of the frame
-		visualizationYOrigin = frame.getHeight() / 2;
+		// make y=0 the center of the visualization
+		visualizationYOrigin = VISUALIZATION_TOP_PADDING + visualizationHeight / 2;
 		
-		// use the full frame height with some padding
-		visualizationYRange = frame.getHeight() / 2 - 100;
+		// use the full range of the visualization with some padding
+		visualizationYRange = (visualizationHeight / 2);
 		
 		// scale so the largest amplitude values use the Y full range
 		// this way, the largest amplitude value will be at the very top of the visualization
 		visualizationYScale = (double)visualizationYRange / AudioSample.AMPLITUDE_MAX_VALUE;
 		
 		// calculate the time span that can be seen by the visualizer
-		recalculateVisualizationTimeSpanNS();
+		recalculateVisualizationWindowTimeSpanNS(false);
 	}
 	
-	void recalculateVisualizationTimeSpanNS()
+	synchronized void recalculateVisualizationWindowTimeSpanNS(boolean keepScrollBarCentered)
 	{
 		// calculate the time span that can be seen by the visualizer
-		visualizationTimeSpanNS = (long)(visualizerWidth / visualizationXScale + 0.5d);
+		visualizationWindowTimeSpanNS = (long)(visualizerPanel.getWidth() / visualizationXScale + 0.5d);
+		
+		recalculateVisualizationWindowVisibleSamples();
+		
+		// update the scroll bar if we have one
+		if (scrollBar != null)
+			setScrollBarWindowTimeSpan(visualizationWindowTimeSpanNS, keepScrollBarCentered);
+	}
+	
+	synchronized void recalculateVisualizationWindowVisibleSamples()
+	{
+		if (samples.size() == 0)
+		{
+			visualizationWindowFirstVisibleSampleIndex = -1;
+			visualizationWindowLastVisibleSampleIndex  = -1;
+			return;
+		}
+		
+		// get oldest sample
+		AudioSample oldestSample = samples.get(0);
+		
+		
+		// find the first visible sample
+		// get time from oldest sample to visualization window's left side
+		long timeTillWindowLeftNS = visualizationWindowTimePositionNS - oldestSample.timeNS;
+		
+		// get the number of samples that would make up this time (rounded down)
+		int numSamplesTillWindowLeft = (int)((double)(timeTillWindowLeftNS * sampleRate) / FlowMeterReader.NS_IN_S);
+		
+		// if it is negative, this means the oldest sample is past the left side of the visualization window
+		if (numSamplesTillWindowLeft < 0)
+			numSamplesTillWindowLeft = 0;
+		
+		// if this greater than the number of samples, then there are no samples that are past the left side of the visualization window
+		if (numSamplesTillWindowLeft > samples.size())
+		{
+			// if the there are no samples past the left side, there are no visible samples
+			visualizationWindowFirstVisibleSampleIndex = -1;
+			visualizationWindowLastVisibleSampleIndex  = -1;
+			return;
+		}
+		
+		int firstVisibleIndex = numSamplesTillWindowLeft - 1;
+		
+		// if this is negative, that means it took 0 samples to get to the window's left side
+		if (firstVisibleIndex < 0)
+		{
+			// the first visible sample is the first sample
+			firstVisibleIndex = 0;
+		}
+		
+		visualizationWindowFirstVisibleSampleIndex = firstVisibleIndex;
+		
+		
+		// find the last visible sample
+		// get time from oldest sample to visualization window's right side
+		long timeTillWindowRightNS = (visualizationWindowTimePositionNS + visualizationWindowTimeSpanNS) - oldestSample.timeNS;
+		
+		// get the number of samples that would make up this time (rounded up)
+		int numSamplesTillWindowRight = (int)(((double)(timeTillWindowRightNS * sampleRate) / FlowMeterReader.NS_IN_S) + 0.5d);
+		
+		// if it is negative, this means the oldest sample is past the right side of the visualization window
+		if (numSamplesTillWindowRight < 0)
+		{
+			// if the oldest sample is past the right side, there are no visible samples
+			visualizationWindowFirstVisibleSampleIndex = -1;
+			visualizationWindowLastVisibleSampleIndex  = -1;
+			return;
+		}
+		
+		// +1 to account for rounding errors
+		++numSamplesTillWindowRight;
+		
+		// if this greater than the number of samples, then their are no samples past the right side of the visualization window
+		if (numSamplesTillWindowRight > samples.size() - 1)
+		{
+			// use the last sample
+			numSamplesTillWindowRight = samples.size() - 1;
+		}
+		
+		visualizationWindowLastVisibleSampleIndex = numSamplesTillWindowRight;
+	}
+	
+	void updateScrollBar(int value, int extent, int min, int max)
+	{
+		if (extent > max - min)
+			extent = max - min;
+		
+		if (value < min)
+			value = min;
+		
+		if (value + extent > max)
+			value = max - extent;
+		
+		scrollBar.getModel().setRangeProperties(value, extent, min, max, scrollBar.getModel().getValueIsAdjusting());
+	}
+	
+	void setScrollBarTimeSpan(long startTimeSpan, long endTimeSpan)
+	{
+		updateScrollBar(
+			scrollBar.getModel().getValue(),
+			scrollBar.getModel().getExtent(),
+			(int)(startTimeSpan * SCROLL_BAR_SCALE),
+			(int)(endTimeSpan   * SCROLL_BAR_SCALE)
+		);
+	}
+	
+	void setScrollBarWindowTimeSpan(long windowTimeSpanNS, boolean keepCentered)
+	{
+		int value  = scrollBar.getModel().getValue();
+		int extent = (int)(windowTimeSpanNS * SCROLL_BAR_SCALE);
+		
+		if (keepCentered)
+		{
+			int oldExtent = scrollBar.getModel().getExtent();
+			int scrollBarCenter = value + oldExtent / 2;
+			
+			value = scrollBarCenter - extent / 2;
+		}
+		
+		updateScrollBar(
+			value,
+			extent,
+			scrollBar.getModel().getMinimum(),
+			scrollBar.getModel().getMaximum()
+		);
+		
+		scrollBar.setBlockIncrement(extent / 2);
+		scrollBar.setUnitIncrement(extent / 10);
 	}
 	
 	
@@ -282,41 +439,32 @@ public class SignalVisualizer
 	{
 		if (samples.size() > 0)
 		{
-			AudioSample newestSample = samples.get(samples.size() - 1);
-			
 			if (onlyShowLatest)
 			{
-				// get the oldest time that can be seen based on the newest sample
-				long oldestVisibleTimeNS = newestSample.timeNS - visualizationTimeSpanNS;
+				// get the oldest time that can be seen based on the newest sample and the visualization window
+				AudioSample newestSample = samples.get(samples.size() - 1);
+				long oldestVisibleTimeNS = newestSample.timeNS - visualizationWindowTimeSpanNS;
 				
 				// remove old data
 				removeOldSamples(oldestVisibleTimeNS);
 				removeOldPulses(oldestVisibleTimeNS);
+				
+				// set the visualizer window's time position to the oldest sample's time
+				AudioSample oldestSample = samples.get(0);
+				visualizationWindowTimePositionNS = oldestSample.timeNS;
 			}
-			
-			AudioSample oldestSample = samples.get(0);
-			
-			// set the visualizer's time position to the oldest sample's time
-			visualizationTimePositionNS = oldestSample.timeNS;
-			
-			// set the visualization width based on the current time span
-			long sampleTimeSpan = newestSample.timeNS - oldestSample.timeNS;
-			dataDisplayedWidth = (int)(sampleTimeSpan * visualizationXScale + 0.5d);
-			
-			if (!onlyShowLatest)
+			else
 			{
-				panel.setPreferredSize(new Dimension(
-					dataDisplayedWidth,
-					panel.getHeight()
-				));
+				// update the scroll bar
+				AudioSample newestSample = samples.get(samples.size() - 1);
+				AudioSample oldestSample = samples.get(0);
+				
+				setScrollBarTimeSpan(oldestSample.timeNS, newestSample.timeNS);
 			}
 		}
 		
 		// redraw
-		if (scroller != null)
-			scroller.repaint();
-		else
-			panel.repaint();
+		visualizerPanel.repaint();
 	}
 	
 	
@@ -401,29 +549,17 @@ public class SignalVisualizer
 	 * 
 	 * @param g - Graphics to draw with.
 	 */
-	public synchronized void drawVisualization(JPanel panel, Graphics g)
+	public synchronized void drawVisualization(Graphics g, int width, int height)
 	{
 		// start fresh
-		g.clearRect(0, 0, panel.getWidth(), panel.getHeight());
+		g.clearRect(0, 0, width, height);
 		
 		// -------------------------------------------------------------------
 		// guide lines
 		
-		// draw a line at the Y origin
-		g.setColor(Color.GRAY);
-		g.drawLine(
-			0,                  visualizationYOrigin,
-			dataDisplayedWidth, visualizationYOrigin);
-		g.drawLine(
-			0,                  visualizationYOrigin - visualizationYRange,
-			dataDisplayedWidth, visualizationYOrigin - visualizationYRange);
-		g.drawLine(
-			0,                  visualizationYOrigin + visualizationYRange,
-			dataDisplayedWidth, visualizationYOrigin + visualizationYRange);
-		
-		
 		if (showGridLines)
 		{
+			// draw amplitude lines at 10% intervals
 			g.setColor(Color.LIGHT_GRAY);
 			for (int i = 9; i > -10; --i)
 			{
@@ -431,9 +567,81 @@ public class SignalVisualizer
 					continue;
 				
 				int y = visualizationYOrigin - (int)((i / 10.0d) * visualizationYRange);
-				g.drawLine(0, y, dataDisplayedWidth, y);
+				g.drawLine(0, y, width, y);
+			}
+			
+			
+			// draw time lines
+			// the optimal number of grid lines should fill the screen with 100 pixels between each
+			int optimalNumLines = width / 100;
+			
+			// get the spacing between each gridline for the optimal 
+			long lineTimeSpacingNS = visualizationWindowTimeSpanNS / optimalNumLines;
+			
+			// round the spacing using the most significant digit
+			int mul = 10;
+			while (lineTimeSpacingNS/mul >= 10) // continue until we have only 1 digit
+				mul *= 10;
+			
+			lineTimeSpacingNS = (int)Math.round((double)lineTimeSpacingNS / mul) * mul;
+			
+			// find the starting time using the spacing (rounded down)
+			long firstLineTimesNS = ((long)((double)visualizationWindowTimePositionNS / lineTimeSpacingNS)) * lineTimeSpacingNS;
+			
+			// get the number of lines to draw (rounded up) and an extra
+			int numLines = (int)(((double)visualizationWindowTimeSpanNS / lineTimeSpacingNS) + 0.5d) + 1;
+			
+			// get the unit to use
+			String unit = null;
+			long unitMul = 1l;
+			
+			if (lineTimeSpacingNS > FlowMeterReader.NS_IN_S / 10) // seconds
+			{
+				unit = "s";
+				unitMul = FlowMeterReader.NS_IN_S;
+			}
+			else if (lineTimeSpacingNS > FlowMeterReader.NS_IN_MS / 100) // milliseconds
+			{
+				unit = "ms";
+				unitMul = FlowMeterReader.NS_IN_MS;
+			}
+			
+			for (int i = 0; i < numLines; ++i)
+			{
+				long time = firstLineTimesNS + i * lineTimeSpacingNS;
+				int x = getXForTime(time);
+				
+				// draw lines
+				g.setColor(Color.LIGHT_GRAY);
+				g.drawLine(x, VISUALIZATION_TOP_PADDING, x, height);
+				
+				// draw label
+				g.setColor(Color.BLACK);
+				
+				// get displayTime
+				String displayTime;
+				if (unit == null)
+					displayTime = time + "ns";
+				else
+					displayTime = ((time / (unitMul / 100)) / 100.0d) + unit; // round to two decimal places
+				
+				g.drawString(displayTime, x + 1, height - VISUALIZATION_BOTTOM_PADDING + 15);
 			}
 		}
+		
+		// draw a line at the Y origin
+		g.setColor(Color.GRAY);
+		g.drawLine(
+			0,     visualizationYOrigin,
+			width, visualizationYOrigin);
+		
+		// draw lines to show the amplitude range
+		g.drawLine(
+			0,     visualizationYOrigin - visualizationYRange,
+			width, visualizationYOrigin - visualizationYRange);
+		g.drawLine(
+			0,     visualizationYOrigin + visualizationYRange,
+			width, visualizationYOrigin + visualizationYRange);
 		
 		
 		// -------------------------------------------------------------------
@@ -442,6 +650,12 @@ public class SignalVisualizer
 		for (int i = 0; i < pulses.size(); ++i)
 		{
 			Pulse pulse = pulses.get(i);
+			
+			// check if the pulse is visible
+			if (pulse.endSample.timeNS < visualizationWindowTimePositionNS)
+				continue;
+			if (pulse.startSample.timeNS > visualizationWindowTimePositionNS + visualizationWindowTimeSpanNS)
+				break;
 			
 			g.setColor(pulse.flowMeterID == 1? FM1_LIGHT_COLOR : FM2_LIGHT_COLOR);
 			
@@ -465,6 +679,7 @@ public class SignalVisualizer
 			}
 			
 			
+			// draw boxes if enabled
 			if ((pulse.flowMeterID == 1 && showFM1PulseBoxes) ||
 				(pulse.flowMeterID == 2 && showFM2PulseBoxes))
 			{
@@ -475,13 +690,14 @@ public class SignalVisualizer
 					(endX - startX) + 1,
 					(bottomY - topY) + 1);
 				
-				// draw boxes around pulses
+				// draw box around pulses
 				g.drawRect(
 					startX - 5,
 					topY - 5,
 					(endX - startX) + 11,
 					(bottomY - topY) + 11);
 			}
+			
 			
 			// draw amplitude delta if enabled
 			if (showPulseAmplitudeDeltas)
@@ -499,16 +715,19 @@ public class SignalVisualizer
 		// -------------------------------------------------------------------
 		// samples
 		
-		g.setColor(Color.BLACK);
-		for (int i = 1; i < samples.size(); ++i)
+		if (visualizationWindowFirstVisibleSampleIndex > -1)
 		{
-			AudioSample sample         = samples.get(i);
-			AudioSample previousSample = samples.get(i - 1);
-			
-			// draw a line from the previous sample to this one
-			g.drawLine(
+			g.setColor(Color.BLACK);
+			for (int i = visualizationWindowFirstVisibleSampleIndex + 1; i <= visualizationWindowLastVisibleSampleIndex; ++i)
+			{
+				AudioSample sample         = samples.get(i);
+				AudioSample previousSample = samples.get(i - 1);
+				
+				// draw a line from the previous sample to this one
+				g.drawLine(
 					getXForTime(previousSample.timeNS), getYForAmplitude(previousSample.amplitude),
 					getXForTime(sample        .timeNS), getYForAmplitude(sample        .amplitude));
+			}
 		}
 		
 		
@@ -521,7 +740,7 @@ public class SignalVisualizer
 			int bottomY = visualizationYOrigin + visualizationYRange + 10;
 			
 			g.setColor(Color.LIGHT_GRAY);
-			g.fillRect(scrollPosX, topY, 30, bottomY - topY);
+			g.fillRect(0, topY, 30, bottomY - topY);
 			
 			g.setColor(Color.BLACK);
 			for (int i = 10; i > -11; --i)
@@ -529,7 +748,7 @@ public class SignalVisualizer
 				double ratio = i / 10.0d;
 				int y = visualizationYOrigin - (int)(ratio * visualizationYRange);
 				
-				g.drawString(Double.toString(ratio), scrollPosX + 3, y + 5);
+				g.drawString(Double.toString(ratio), 3, y + 5);
 			}
 		}
 		
@@ -539,29 +758,29 @@ public class SignalVisualizer
 		
 		// draw the scroll position
 		g.setColor(Color.BLACK);
-		g.drawString("Samples Processed: " + totalNumSamples,             scrollPosX + 20, 30);
-		g.drawString("Current Time: "      + visualizationTimePositionNS, scrollPosX + 20, 45);
+		g.drawString("Samples Processed: " + totalNumSamples,                   20, 30);
+		g.drawString("Current Time: "      + visualizationWindowTimePositionNS, 20, 45);
 		
 		g.setColor(FM1_COLOR);
-		g.drawString("FM1 Pulses: "        + totalNumPulsesFM1,           scrollPosX + 20, 60);
+		g.drawString("FM1 Pulses: "        + totalNumPulsesFM1,                 20, 60);
 		
 		g.setColor(FM2_COLOR);
-		g.drawString("FM2 Pulses: "        + totalNumPulsesFM2,           scrollPosX + 20, 75);
+		g.drawString("FM2 Pulses: "        + totalNumPulsesFM2,                 20, 75);
 		
 		
 		g.setColor(Color.BLACK);
-		g.drawString("W, S: Zoom",                       scrollPosX + 300, 30);
-		g.drawString("A, D: Pan",                        scrollPosX + 300, 45);
-		g.drawString("1, 2: Toggle Pulse Boxes",         scrollPosX + 300, 60);
-		g.drawString("3: Toggle Pulse Amplitude Deltas", scrollPosX + 300, 75);
-		g.drawString("4: Toggle Grid Lines",             scrollPosX + 300, 90);
+		g.drawString("W, S: Zoom",                       250, 30);
+		g.drawString("A, D: Pan",                        250, 45);
+		g.drawString("1, 2: Toggle Pulse Boxes",         250, 60);
+		g.drawString("3: Toggle Pulse Amplitude Deltas", 250, 75);
+		g.drawString("4: Toggle Grid Lines",             250, 90);
 		
 		
 		g.setColor(FM1_COLOR);
-		g.drawString("FM1 Pulse Amplitude Delta Threshold: " + FlowMeterReader.FM1_PULSE_AMPLITUDE_DELTA_THRESHOLD_RATIO + " (" + FlowMeterReader.FM1_PULSE_AMPLITUDE_DELTA_THRESHOLD + ")", scrollPosX + 600, 30);
+		g.drawString("FM1 Pulse Amplitude Delta Threshold: " + FlowMeterReader.FM1_PULSE_AMPLITUDE_DELTA_THRESHOLD_RATIO + " (" + FlowMeterReader.FM1_PULSE_AMPLITUDE_DELTA_THRESHOLD + ")", 500, 30);
 		
 		g.setColor(FM2_COLOR);
-		g.drawString("FM2 Pulse Amplitude Delta Threshold: " + FlowMeterReader.FM2_PULSE_AMPLITUDE_DELTA_THRESHOLD_RATIO + " (" + FlowMeterReader.FM2_PULSE_AMPLITUDE_DELTA_THRESHOLD + ")", scrollPosX + 600, 45);
+		g.drawString("FM2 Pulse Amplitude Delta Threshold: " + FlowMeterReader.FM2_PULSE_AMPLITUDE_DELTA_THRESHOLD_RATIO + " (" + FlowMeterReader.FM2_PULSE_AMPLITUDE_DELTA_THRESHOLD + ")", 500, 45);
 	}
 	
 	/**
@@ -574,7 +793,7 @@ public class SignalVisualizer
 	 */
 	private int getXForTime(long timeNS)
 	{
-		return (int)((timeNS - visualizationTimePositionNS) * visualizationXScale);
+		return (int)((timeNS - visualizationWindowTimePositionNS) * visualizationXScale);
 	}
 	
 	/**
@@ -590,4 +809,3 @@ public class SignalVisualizer
 		return (int)(visualizationYOrigin - amplitude * visualizationYScale);
 	}
 }
-

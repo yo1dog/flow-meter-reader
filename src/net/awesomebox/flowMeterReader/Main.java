@@ -45,11 +45,13 @@ public class Main
 		
 		
 		
+		int sampleRate = (int)audioFormat.getSampleRate();
+		
 		// create the visualizer
-		SignalVisualizer signalVisualizer = new SignalVisualizer(true);
+		SignalVisualizer signalVisualizer = new SignalVisualizer(sampleRate, true);
 		
 		// create the reader
-		FlowMeterReader flowMeterReader = new FlowMeterReader(16000, signalVisualizer);
+		FlowMeterReader flowMeterReader = new FlowMeterReader(sampleRate, signalVisualizer);
 		
 		
 		
@@ -98,19 +100,20 @@ public class Main
 		sourceDataLine.open(audioFormat);
 		
 		
+		int sampleRate = (int)audioFormat.getSampleRate();
 		
 		// create the visualizer
-		SignalVisualizer signalVisualizer = new SignalVisualizer(false);
+		SignalVisualizer signalVisualizer = new SignalVisualizer(sampleRate, false);
 		
 		// create the reader
-		FlowMeterReader flowMeterReader = new FlowMeterReader((int)audioFormat.getSampleRate(), signalVisualizer);
+		FlowMeterReader flowMeterReader = new FlowMeterReader(sampleRate, signalVisualizer);
 		
 		
 		
 		// open the audio stream into the clip
 		int numBytesRead = 0;
 		int totalNumBytesRead = 0;
-		byte[] audioByteBuffer = new byte[160];//1000000];
+		byte[] audioByteBuffer = new byte[1000000];
 		
 		sourceDataLine.start();
 		
