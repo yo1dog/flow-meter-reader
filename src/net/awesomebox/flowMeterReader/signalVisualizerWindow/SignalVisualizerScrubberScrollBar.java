@@ -6,7 +6,7 @@ import java.awt.event.AdjustmentListener;
 import javax.swing.JScrollBar;
 
 import net.awesomebox.flowMeterReader.AudioSample;
-import net.awesomebox.flowMeterReader.SignalVisualizer;
+import net.awesomebox.flowMeterReader.signalVisualizer.SignalVisualizer;
 
 public class SignalVisualizerScrubberScrollBar extends JScrollBar implements AdjustmentListener
 {

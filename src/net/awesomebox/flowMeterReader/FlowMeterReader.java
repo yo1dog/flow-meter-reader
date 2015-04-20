@@ -10,7 +10,7 @@ public class FlowMeterReader
 	//
 	// ===================================================================
 	
-	// number of nanoseconds in a second
+	// number of nanoseconds in a second and a millisecond
 	public static final long NS_IN_S  = 1000000000l;
 	public static final long NS_IN_MS = 1000000l;
 	
@@ -23,6 +23,7 @@ public class FlowMeterReader
 	public static final double FM2_PULSE_AMPLITUDE_DELTA_THRESHOLD_RATIO = 0.75d;
 	public static final int FM1_PULSE_AMPLITUDE_DELTA_THRESHOLD = (int)(FM1_PULSE_AMPLITUDE_DELTA_THRESHOLD_RATIO * AudioSample.AMPLITUDE_MAX_VALUE);
 	public static final int FM2_PULSE_AMPLITUDE_DELTA_THRESHOLD = (int)(FM2_PULSE_AMPLITUDE_DELTA_THRESHOLD_RATIO * AudioSample.AMPLITUDE_MAX_VALUE);
+	
 	
 	
 	// ===================================================================
@@ -110,8 +111,6 @@ public class FlowMeterReader
 	 * @param dataLength - Number of bytes to read.
 	 * @param bigEndian  - If the data is big-endian (true) or little-endian (false).
 	 */
-	public int maxAmplitude = 0;
-	public int minAmplitude = 0;
 	public FlowMeterReading readFlowMeterAudioData(byte[] data, int dataOffset, int dataLength, boolean bigEndian)
 	{
 		// create audio samples from the audio data

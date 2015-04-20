@@ -6,7 +6,7 @@ import java.awt.event.ComponentListener;
 
 import javax.swing.JPanel;
 
-import net.awesomebox.flowMeterReader.SignalVisualizer;
+import net.awesomebox.flowMeterReader.signalVisualizer.SignalVisualizer;
 
 /**
  * Custom panel for drawing our signal visualization.

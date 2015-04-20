@@ -8,7 +8,7 @@ package net.awesomebox.flowMeterReader;
  */
 public class AudioSample
 {
-	public static final long TIME_MIN_VALUE = Long.MIN_VALUE;
+	public static final long TIME_MIN_VALUE = 0;
 	public static final long TIME_MAX_VALUE = Long.MAX_VALUE;
 	
 	public static final short AMPLITUDE_MIN_VALUE = Short.MIN_VALUE;

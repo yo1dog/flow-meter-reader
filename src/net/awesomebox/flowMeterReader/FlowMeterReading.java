@@ -1,5 +1,8 @@
 package net.awesomebox.flowMeterReader;
 
+/**
+ * Contains the results of a flow meter audio data reading.
+ */
 public final class FlowMeterReading
 {
 	public final AudioSample[] samples;

@@ -8,21 +8,10 @@ import java.awt.event.KeyListener;
 import javax.swing.JFrame;
 import javax.swing.JScrollBar;
 
-import net.awesomebox.flowMeterReader.SignalVisualizer;
+import net.awesomebox.flowMeterReader.signalVisualizer.SignalVisualizer;
 
 public class SignalVisualizerWindow implements KeyListener, SignalVisualizerDisplayPanelListener, SignalVisualizerScrubberScrollBarListener
 {
-	// ===================================================================
-	// Constants
-	//
-	// ===================================================================
-	
-	private static final int VISUALIZATION_TOP_PADDING    = 120;
-	private static final int VISUALIZATION_BOTTOM_PADDING = 40;
-	private static final int VISUALIZATION_MIN_HEIGHT     = 100;
-	
-	
-	
 	// ===================================================================
 	// Variables
 	//
@@ -42,7 +31,8 @@ public class SignalVisualizerWindow implements KeyListener, SignalVisualizerDisp
 	// window elements
 	
 	private final JFrame frame;
-	private final SignalVisualizerDisplayPanel visualizerDisplayPanel;
+	private final SignalVisualizerInfoPanel         visualizerInfoPanel;
+	private final SignalVisualizerDisplayPanel      visualizerDisplayPanel;
 	private final SignalVisualizerScrubberScrollBar visualizerScrubberScrollBar;
 	
 	
@@ -53,12 +43,16 @@ public class SignalVisualizerWindow implements KeyListener, SignalVisualizerDisp
 		this.signalVisualizer = signalVisualizer;
 		signalVisualizer.setVisualizationSize(visulizationWidth, visulizationHeight);
 		
-		
 		// create the frame
 		frame = new JFrame("SignalVisualizer");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		frame.setLayout(new BorderLayout());
 		frame.addKeyListener(this);
+		
+		
+		// create the info panel
+		visualizerInfoPanel = new SignalVisualizerInfoPanel(signalVisualizer);
+		frame.add(visualizerInfoPanel, BorderLayout.NORTH);
 		
 		
 		// create the display
@@ -71,14 +65,14 @@ public class SignalVisualizerWindow implements KeyListener, SignalVisualizerDisp
 			signalVisualizer.getVisualizationHeight()
 		));
 		
-		frame.add(visualizerDisplayPanel, java.awt.BorderLayout.CENTER);
+		frame.add(visualizerDisplayPanel, BorderLayout.CENTER);
 		
 		
 		// create the scrubber
 		visualizerScrubberScrollBar = new SignalVisualizerScrubberScrollBar(signalVisualizer, this);
 		visualizerScrubberScrollBar.setOrientation(JScrollBar.HORIZONTAL);
 		
-		frame.add(visualizerScrubberScrollBar, java.awt.BorderLayout.SOUTH);
+		frame.add(visualizerScrubberScrollBar, BorderLayout.SOUTH);
 		
 		
 		// finalize
@@ -103,6 +97,9 @@ public class SignalVisualizerWindow implements KeyListener, SignalVisualizerDisp
 	{
 		// update the scrubber
 		visualizerScrubberScrollBar.refresh();
+		
+		// update the info panel
+		visualizerInfoPanel.refresh();
 		
 		// redraw the display
 		visualizerDisplayPanel.repaint();
