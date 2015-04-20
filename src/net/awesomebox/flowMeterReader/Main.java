@@ -10,11 +10,17 @@ import javax.sound.sampled.DataLine;
 import javax.sound.sampled.SourceDataLine;
 import javax.sound.sampled.TargetDataLine;
 
-import net.awesomebox.flowMeterReader.SignalVisualizer;
+import net.awesomebox.flowMeterReader.signalVisualizerWindow.SignalVisualizerWindow;
+
 
 // TODO: memory leak
 public class Main
 {
+	// starting screen size
+	private static final int STARTING_VISUALIZATION_WIDTH  = 1200;
+	private static final int STARTING_VISUALIZATION_HEIGHT = 500;
+	
+	
 	public static void main(String[] args) throws Exception
 	{
 		streamFromFile();
@@ -48,10 +54,14 @@ public class Main
 		int sampleRate = (int)audioFormat.getSampleRate();
 		
 		// create the visualizer
-		SignalVisualizer signalVisualizer = new SignalVisualizer(sampleRate, true);
+		SignalVisualizer signalVisualizer = new SignalVisualizer(sampleRate, 10 * FlowMeterReader.NS_IN_S, true);
+		
+		// create the visualizer window
+		SignalVisualizerWindow signalVisualizerWindow = new SignalVisualizerWindow(signalVisualizer, STARTING_VISUALIZATION_WIDTH, STARTING_VISUALIZATION_HEIGHT);
+		signalVisualizerWindow.show();
 		
 		// create the reader
-		FlowMeterReader flowMeterReader = new FlowMeterReader(sampleRate, signalVisualizer);
+		FlowMeterReader flowMeterReader = new FlowMeterReader(sampleRate);
 		
 		
 		
@@ -61,7 +71,7 @@ public class Main
 		byte[] audioByteBuffer = new byte[line.getBufferSize()];
 		while (true)
 		{
-			if (signalVisualizer.shouldPause())
+			if (signalVisualizerWindow.getStreamerShouldPause())
 			{
 				Thread.sleep(100);
 				line.flush();
@@ -75,7 +85,18 @@ public class Main
 				System.err.println("Getting behind! " + line.available());
 			
 			if (numBytesRead > -1)
-				flowMeterReader.processAudioData(audioByteBuffer, 0, numBytesRead, audioFormat.isBigEndian());
+			{
+				// read the audio data
+				FlowMeterReading reading = flowMeterReader.readFlowMeterAudioData(audioByteBuffer, 0, numBytesRead, audioFormat.isBigEndian());
+				
+				// update the visualizer
+				signalVisualizer.addSamples(reading.samples);
+				signalVisualizer.addPulses(reading.pulses);
+				signalVisualizer.refresh();
+				
+				// update the visualizer window
+				signalVisualizerWindow.refresh();
+			}
 			
 			Thread.sleep(1);
 		}
@@ -103,10 +124,14 @@ public class Main
 		int sampleRate = (int)audioFormat.getSampleRate();
 		
 		// create the visualizer
-		SignalVisualizer signalVisualizer = new SignalVisualizer(sampleRate, false);
+		SignalVisualizer signalVisualizer = new SignalVisualizer(sampleRate);
+		
+		// create the visualizer window
+		SignalVisualizerWindow signalVisualizerWindow = new SignalVisualizerWindow(signalVisualizer, STARTING_VISUALIZATION_WIDTH, STARTING_VISUALIZATION_HEIGHT);
+		signalVisualizerWindow.show();
 		
 		// create the reader
-		FlowMeterReader flowMeterReader = new FlowMeterReader(sampleRate, signalVisualizer);
+		FlowMeterReader flowMeterReader = new FlowMeterReader(sampleRate);
 		
 		
 		
@@ -133,7 +158,17 @@ public class Main
 			// process the data we have read so far
 			if (numBytesRead > 0)
 			{
-				flowMeterReader.processAudioData(audioByteBuffer, 0, numBytesRead, audioFormat.isBigEndian());
+				// read the audio data
+				FlowMeterReading reading = flowMeterReader.readFlowMeterAudioData(audioByteBuffer, 0, numBytesRead, audioFormat.isBigEndian());
+				
+				// update the visualizer
+				signalVisualizer.addSamples(reading.samples);
+				signalVisualizer.addPulses(reading.pulses);
+				signalVisualizer.refresh();
+				
+				// update the visualizer window
+				signalVisualizerWindow.refresh();
+				
 				totalNumBytesRead += numBytesRead;
 			}
 			

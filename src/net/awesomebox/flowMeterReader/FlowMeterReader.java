@@ -2,6 +2,7 @@ package net.awesomebox.flowMeterReader;
 
 import java.util.ArrayList;
 
+
 public class FlowMeterReader
 {
 	// ===================================================================
@@ -34,9 +35,6 @@ public class FlowMeterReader
 	
 	// sample rate of the audio stream we are reading
 	private final int sampleRate;
-	
-	// visualizer to add samples and interrupts to
-	private final SignalVisualizer visualizer;
 	
 	
 	// -------------------------------------------------------------------
@@ -71,12 +69,7 @@ public class FlowMeterReader
 	
 	public FlowMeterReader(int sampleRate)
 	{
-		this(sampleRate, null);
-	}
-	public FlowMeterReader(int sampleRate, SignalVisualizer visualizer)
-	{
 		this.sampleRate = sampleRate;
-		this.visualizer = visualizer;
 		
 		// calculate derived constants
 		// D = AMPLITUDE_DELTA_DURATION_NS
@@ -96,11 +89,11 @@ public class FlowMeterReader
 	// ===================================================================
 	
 	/**
-	 * @see #processAudioData(byte[], int, int, boolean)
+	 * @see #readFlowMeterAudioData(byte[], int, int, boolean)
 	 */
-	public Pulse[] processAudioData(byte[] data, int dataOffset, int dataLength)
+	public FlowMeterReading readFlowMeterAudioData(byte[] data, int dataOffset, int dataLength)
 	{
-		return processAudioData(data, dataOffset, dataLength, true);
+		return readFlowMeterAudioData(data, dataOffset, dataLength, true);
 	}
 	
 	/**
@@ -119,7 +112,7 @@ public class FlowMeterReader
 	 */
 	public int maxAmplitude = 0;
 	public int minAmplitude = 0;
-	public Pulse[] processAudioData(byte[] data, int dataOffset, int dataLength, boolean bigEndian)
+	public FlowMeterReading readFlowMeterAudioData(byte[] data, int dataOffset, int dataLength, boolean bigEndian)
 	{
 		// create audio samples from the audio data
 		AudioSample[] samples = createSamplesFromAudioData(data, dataOffset, dataLength, bigEndian);
@@ -127,16 +120,8 @@ public class FlowMeterReader
 		// detect pulses
 		Pulse[] pulses = detectPulses(samples);
 		
-		// update the visualizer
-		if (visualizer != null)
-		{
-			visualizer.addSamples(samples);
-			visualizer.addPulses(pulses);
-			visualizer.refresh();
-		}
-		
 		// done
-		return pulses;
+		return new FlowMeterReading(samples, pulses);
 	}
 	
 	/**
